@@ -16,7 +16,7 @@ var_sets <- as.character(read.gdsn(index.gdsn(barley, "variant.id"))) %>%
 phys_pos <- as.numeric(read.gdsn(index.gdsn(barley, "position"))) %>%
     split(chrom)
 
-window <- 50
+window <- 10
 size <- window * 2 + 1
 
 ld_mats <- lapply(var_sets, function (var_set) {
@@ -54,16 +54,16 @@ dev.off()
 
 ################################################################################
 
-make_rows <- function(cols, start, size) {
-    cols <- c(start:cols[1], cols)
-    if (length(cols) > size) {
-        rows <- c((length(cols) - size):1, 1:size)
-    } else {
-        rows <- 1:size
-    }
-    cbind(rows, cols)
+# make_rows <- function(cols, start, size) {
+#     cols <- c(start:cols[1], cols)
+#     if (length(cols) > size) {
+#         rows <- c((length(cols) - size):1, 1:size)
+#     } else {
+#         rows <- 1:size
+#     }
+#     cbind(rows, cols)
     
-}
+# }
 
 # calc_densities <- function (ld_mat, cores) {
 #     size <- (nrow(ld_mat) - 1) / 2
@@ -102,33 +102,27 @@ make_rows <- function(cols, start, size) {
 calc_densities <- function (ld_mat, cores) {
     int_size <- min(size, ncol(ld_mat))
     mclapply(1:ncol(ld_mat), function (i) {
-        if (i == 1) {
-            if (ncol == int_size) {
-                cols <- 1
-                rows <- 1:(int_size - 1)
+        if (i - window > 0 && i + window < ncol(ld_mat)) {
+            # print(1)
+            cols <- c((i - window):i, rep(i, window - 1))
+            rows <- c(window:1, 1:(window))
+        } else if (i - window > 0) {
+            # print(2)
+            cols <- (ncol(ld_mat) - (int_size - 1)):(ncol(ld_mat) - 1)
+            cols[which(cols > i)] <- i
+            if (i == ncol(ld_mat)) {
+                rows <- c(sum(cols < i):1)
             } else {
-                cols <- 1
-                rows <- 1:int_size
+                rows <- c(sum(cols < i):1, 1:sum(cols == i))
             }
-            print(1)
-        } else if (i == ncol(ld_mat)) {
-            cols <- (ncol(ld_mat) - int_size):(ncol(ld_mat) - 1)
-            cols <- cols[which(cols > 0)]
-            rows <- length(cols):1
-            print(2)
         } else {
-            if (ncol(ld_mat) == int_size) {
-                print(3)
-                print(i)
-                print(int_size)
-                cols <- c(1:(i - 1), rep(i, int_size - i))
-                rows <- c((i - 1):1, 1:(int_size - i))
+            # print(3)
+            cols <- 1:(int_size - 1)
+            cols[which(cols > i)] <- i
+            if (i == 1) {
+                rows <- c(1:sum(cols == i))
             } else {
-                print(4)
-                print(i)
-                print(int_size)
-                cols <- c(1:(i - 1), rep(i, int_size - i + 1))
-                rows <- c((i - 1):1, 1:(int_size - i + 1))
+                rows <- c(sum(cols < i):1, 1:sum(cols == i))
             }
         }
         indices <- cbind(rows, cols)
@@ -143,53 +137,14 @@ calc_densities <- function (ld_mat, cores) {
     }, mc.cores = cores) %>% unlist() %>% as.numeric()
 }
 
-window = 6
+window <- 50
+size <- window * 2 + 1
 
-ncol = 12
-i = ncol - 4
-int_size = min(window * 2 + 1, ncol)
+ld_mats <- lapply(var_sets, function (var_set) {
+    snpgdsLDMat(barley, slide = size, snp.id = var_set, num.thread = 8)$LD
+})
 
-cols <- 0
-rows <- 0
-if (i == 1) {
-    if (ncol == int_size) {
-        cols <- 1
-        rows <- 1:(int_size - 1)
-    } else {
-        cols <- 1
-        rows <- 1:int_size
-    }
-    print(1)
-} else if (i == ncol) {
-    cols <- (ncol - int_size):(ncol - 1)
-    cols <- cols[which(cols > 0)]
-    rows <- length(cols):1
-    print(2)
-} else {
-    if (i - window > 0 && i + window < ncol) {
-        print(4)
-        cols <- c((i - window):i, rep(i, window - 1))
-        rows <- c(window:1, 1:(window))
-    } else if (i - window > 0 && i + window > ncol) {
-        print(5)
-        shift <- (i + window) - ncol
-        cols <- c(max(1, (i - shift - window)):i, rep(i, shift - 1))
-        rows <- c((i - 2):1, 1:(ncol - i))
-    } else {
-        print(6)
-    }
-}
-
-cbind(rows, cols)
-
-if (i - window == 0) {
-
-}
-
-
-
-
-densities <- lapply(ld_mats, calc_densities, 1)
+densities <- lapply(ld_mats, calc_densities, 8)
 
 ld_prune <- function (i) {
     chrom <- tibble(id = var_sets[[i]], density = densities[[i]])
@@ -200,7 +155,7 @@ ld_prune <- function (i) {
         # create a window around the densest marker
         markers <- (densest - window):(densest + window)
         # select those snps that actually exist in chrom and extract their ids
-        markers <- chrom$id[which((markers >= 1) & (markers <= nrow(chrom)))]
+        markers <- chrom$id[markers[which((markers >= 1) & (markers <= nrow(chrom)))]]
         # find all combinations of size 2 of markers in this window
         comps <- combn(markers, 2)
         # get the LD mat of these markers, find which ones are in LD greater
@@ -244,7 +199,6 @@ ld_prune <- function (i) {
         snpset_ids <- chrom$id[major_range_rows]
         # calculate the LD of the snpset markers to each other
         ld <- snpgdsLDMat(barley, slide = size, snp.id = snpset_ids, num.thread = 1, verbose = FALSE)$LD
-        print(dim(ld))
         # identify the indices of the markers in snpset_id that correspond to
         # the ones that need to be updated
         to_change <- which(major_range_rows %in% minor_range_rows)
@@ -255,9 +209,9 @@ ld_prune <- function (i) {
     chrom
 }
 
-prop <- 0.2
+prop <- 0.05
 threshold <- 0.7
-snp_sets <- mclapply(1:length(densities), ld_prune, mc.cores = 1)
+snp_sets <- mclapply(1:length(densities), ld_prune, mc.cores = 8)
 
 which(! var_sets[[1]] %in% snp_sets[[1]]$id)
 ################################################################################
@@ -271,3 +225,5 @@ for (i in 1:7) {
     plot(phys_pos[[i]][var_sets[[i]] %in% snp_sets[[i]]$id], gen_pos[[i]][var_sets[[i]] %in% snp_sets[[i]]$id])
 }
 dev.off()
+
+pca <- snpgdsPCA(barley, snp.id=(snp_sets %>% do.call(rbind, .))$id, num.thread = 8)
