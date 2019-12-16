@@ -65,70 +65,71 @@ make_rows <- function(cols, start, size) {
     
 }
 
-calc_densities <- function (ld_mat, cores) {
-    size <- (nrow(ld_mat) - 1) / 2
-    intervals <- cbind(
-        c(rep(1, size + 1), 2:(ncol(ld_mat) - (size))),
-        c(size:(ncol(ld_mat) - 1), rep(ncol(ld_mat), size))
-    ) %>% split(., seq(nrow(.)))
-    # print(intervals)
-    mclapply(intervals, function (interval) {
-        rng <- interval[1]:interval[2]
-        if (length(rng) < (size * 2) && interval[1] == 1) {
-            cols <- rep((interval[2] - size) + 1, size - 1)
-            indices <- make_rows(cols, interval[1], size)
-        } else if (length(rng) <= (size * 2) && interval[2] == ncol(ld_mat)) {
-            cols <- rep((interval[2] - size), size - 1)
-            indices <- make_rows(cols, interval[1], size)
-        } else {
-            cols <- c(
-                interval[1]:(interval[2] - size),
-                rep(interval[2] - (size - 1), size)
-            )
-            rows <- c(size:1, 1:size)
-            indices <- cbind(rows, cols)
-        }
-        lds <- abs(ld_mat[indices])
-        lds[is.nan(lds)] <- NA
-        density <- mean(lds, na.rm = TRUE)
-        if (is.nan(density)) {
-            return(1)
-        } else {
-            return(density)
-        }
-    }, mc.cores = cores) %>% unlist() %>% as.numeric()
-}
+# calc_densities <- function (ld_mat, cores) {
+#     size <- (nrow(ld_mat) - 1) / 2
+#     intervals <- cbind(
+#         c(rep(1, size + 1), 2:(ncol(ld_mat) - (size))),
+#         c(size:(ncol(ld_mat) - 1), rep(ncol(ld_mat), size))
+#     ) %>% split(., seq(nrow(.)))
+#     # print(intervals)
+#     mclapply(intervals, function (interval) {
+#         rng <- interval[1]:interval[2]
+#         if (length(rng) < (size * 2) && interval[1] == 1) {
+#             cols <- rep((interval[2] - size) + 1, size - 1)
+#             indices <- make_rows(cols, interval[1], size)
+#         } else if (length(rng) <= (size * 2) && interval[2] == ncol(ld_mat)) {
+#             cols <- rep((interval[2] - size), size - 1)
+#             indices <- make_rows(cols, interval[1], size)
+#         } else {
+#             cols <- c(
+#                 interval[1]:(interval[2] - size),
+#                 rep(interval[2] - (size - 1), size)
+#             )
+#             rows <- c(size:1, 1:size)
+#             indices <- cbind(rows, cols)
+#         }
+#         lds <- abs(ld_mat[indices])
+#         lds[is.nan(lds)] <- NA
+#         density <- mean(lds, na.rm = TRUE)
+#         if (is.nan(density)) {
+#             return(1)
+#         } else {
+#             return(density)
+#         }
+#     }, mc.cores = cores) %>% unlist() %>% as.numeric()
+# }
 
 calc_densities <- function (ld_mat, cores) {
     int_size <- min(size, ncol(ld_mat))
     mclapply(1:ncol(ld_mat), function (i) {
         if (i == 1) {
-            cols <- 1
-            rows <- 1:int_size
-            rows <- rows[which(rows <= int_size)]
+            if (ncol == int_size) {
+                cols <- 1
+                rows <- 1:(int_size - 1)
+            } else {
+                cols <- 1
+                rows <- 1:int_size
+            }
+            print(1)
         } else if (i == ncol(ld_mat)) {
             cols <- (ncol(ld_mat) - int_size):(ncol(ld_mat) - 1)
             cols <- cols[which(cols > 0)]
             rows <- length(cols):1
-        } else if (i <= int_size) {
-            if (ncol == int_size) {
+            print(2)
+        } else {
+            if (ncol(ld_mat) == int_size) {
+                print(3)
+                print(i)
+                print(int_size)
                 cols <- c(1:(i - 1), rep(i, int_size - i))
                 rows <- c((i - 1):1, 1:(int_size - i))
             } else {
+                print(4)
+                print(i)
+                print(int_size)
                 cols <- c(1:(i - 1), rep(i, int_size - i + 1))
                 rows <- c((i - 1):1, 1:(int_size - i + 1))
             }
-        } else if (i >= (ncol(ld_mat) - int_size)) {
-            if ((ncol - int_size) + 1 == i) {
-                cols <- c((i - int_size):(ncol(ld_mat) - int_size), rep(i, ncol(ld_mat)  - i))
-                rows <- c((ncol(ld_mat)  - int_size - 1):1, 1:(ncol(ld_mat)  - i))
-            } else {
-                cols <- c((i - int_size):(ncol(ld_mat)  - int_size + 1), rep(i, ncol(ld_mat)  - i))
-                rows <- c((ncol(ld_mat)  - int_size - 1):1, 1:(ncol(ld_mat)  - i))
-            }
-        } else {
-            cols <- c((i - int_size):i, rep(i, int_size - 1))
-            rows <- c(int_size:1, 1:int_size)
         }
         indices <- cbind(rows, cols)
         lds <- abs(ld_mat[indices])
@@ -141,23 +142,55 @@ calc_densities <- function (ld_mat, cores) {
         }
     }, mc.cores = cores) %>% unlist() %>% as.numeric()
 }
-i = 7
-ncol = 13
-int_size = 12
-if (ncol == int_size) {
-    cols <- c(1:(i - 1), rep(i, int_size - i))
-    rows <- c((i - 1):1, 1:(int_size - i))
+
+window = 6
+
+ncol = 12
+i = ncol - 4
+int_size = min(window * 2 + 1, ncol)
+
+cols <- 0
+rows <- 0
+if (i == 1) {
+    if (ncol == int_size) {
+        cols <- 1
+        rows <- 1:(int_size - 1)
+    } else {
+        cols <- 1
+        rows <- 1:int_size
+    }
+    print(1)
+} else if (i == ncol) {
+    cols <- (ncol - int_size):(ncol - 1)
+    cols <- cols[which(cols > 0)]
+    rows <- length(cols):1
+    print(2)
 } else {
-    cols <- c(1:(i - 1), rep(i, int_size - i + 1))
-    rows <- c((i - 1):1, 1:(int_size - i + 1))
+    if (i - window > 0 && i + window < ncol) {
+        print(4)
+        cols <- c((i - window):i, rep(i, window - 1))
+        rows <- c(window:1, 1:(window))
+    } else if (i - window > 0 && i + window > ncol) {
+        print(5)
+        shift <- (i + window) - ncol
+        cols <- c(max(1, (i - shift - window)):i, rep(i, shift - 1))
+        rows <- c((i - 2):1, 1:(ncol - i))
+    } else {
+        print(6)
+    }
 }
 
 cbind(rows, cols)
 
+if (i - window == 0) {
+
+}
 
 
-densities <- lapply(ld_mats, calc_densities, 8)
-str(var_sets[[i]])
+
+
+densities <- lapply(ld_mats, calc_densities, 1)
+
 ld_prune <- function (i) {
     chrom <- tibble(id = var_sets[[i]], density = densities[[i]])
     n <- (nrow(chrom) * prop) %>% floor()
