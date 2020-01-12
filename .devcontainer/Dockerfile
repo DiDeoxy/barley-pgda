@@ -50,6 +50,7 @@ RUN conda install -c conda-forge \
         r-scrime \
         r-tidyverse \
         r-igraph \
+        r-plotly \
     && conda install -c bioconda \
         bioconductor-seqarray \
         bioconductor-snprelate
