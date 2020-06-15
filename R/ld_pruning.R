@@ -1,12 +1,16 @@
+library(countrycode)
 library(igraph)
 library(parallel)
+library(plotly)
 library(SeqArray)
 library(SNPRelate)
 library(tibble)
 library(magrittr, "%>%")
+import::from(htmlwidgets, "saveWidget")
 import::from(plyr, "llply")
 import::from(readr, "read_tsv", "read_rds", "write_rds")
 import::from(stringr, "str_c")
+source("/workspace/repos/barley-pgda/R/colours.R")
 
 barley <- seqOpen("/workspace/barley/gds/imputed.gds")
 
@@ -24,6 +28,7 @@ ld_mats <- lapply(var_sets, function (var_set) {
     snpgdsLDMat(barley, slide = window, snp.id = var_set, num.thread = 8)$LD
 })
 
+## replace with densitt function
 gen_pos <- lapply(ld_mats, function (ld_mat) {
     intervals <- cbind(
         c(rep(1, window), 2:(ncol(ld_mat) - (window - 1))), 1:(ncol(ld_mat))
@@ -44,7 +49,7 @@ gen_pos <- lapply(ld_mats, function (ld_mat) {
 
 png(
    "/workspace/barley/results/phys_vs_recip_mean_LD.png",
-  family = "Times New Roman", width = 220, height = 1400, pointwindow = 5,
+  family = "Times New Roman", width = 220, height = 1400, pointsize = 5,
   units = "mm", res = 192
 )
 par(mfrow = c(7, 1))
@@ -59,10 +64,13 @@ calc_densities <- function (ld_mat, cores) {
     int_window <- min(window, ncol(ld_mat))
     mclapply(1:ncol(ld_mat), function (i) {
         if (i - pane >= 0 && i + pane <= ncol(ld_mat)) {
+            # print("a")
             cols <- c((i - pane):i, rep(i, pane - 1))
             rows <- c(pane:1, 1:(pane))
         } else if (i - pane < 0) {
+            # print("b")
             cols <- 1:(int_window - 1)
+            # print(cols)
             if (i == 1) {
                 rows <- c(1:length(cols))
             } else {
@@ -70,15 +78,15 @@ calc_densities <- function (ld_mat, cores) {
             }
             cols[which(cols > i)] <- i
         } else {
+            # print("c")
             cols <- (ncol(ld_mat) - (int_window - 1)):(ncol(ld_mat) - 1)
             if (i == ncol(ld_mat)) {
                 rows <- c(length(cols):1)
             } else {
-                rows <- c(sum(cols <= i):2, 1:sum(cols >= i))
+                rows <- c(sum(cols < i):1, 1:sum(cols >= i))
             }
             cols[which(cols > i)] <- i
         }
-        if (length(rows) != length(cols)) { break; }
         indices <- cbind(rows, cols)
         lds <- abs(ld_mat[indices])
         lds[is.nan(lds)] <- NA
@@ -91,11 +99,7 @@ calc_densities <- function (ld_mat, cores) {
     }, mc.cores = cores) %>% unlist() %>% as.numeric()
 }
 
-ld_mats <- lapply(var_sets, function (var_set) {
-    snpgdsLDMat(barley, slide = window, snp.id = var_set, num.thread = 8)$LD
-})
-
-densities <- lapply(ld_mats, calc_densities, 8)
+densities <- lapply(ld_mats, calc_densities, 1)
 
 ################################################################################
 
@@ -125,7 +129,7 @@ ld_prune <- function (i) {
         markers <- chrom$id[cols]
 
         if (length(markers) <= 1) {
-            print(1)
+            # print(1)
             # due to the distance cutoff there may be only one marker
             # we therefore set its density to 0 and skip to the next iteration
             # of the loop. This ensures that the next iteration will move on to
@@ -147,7 +151,7 @@ ld_prune <- function (i) {
             cliques <- largest_cliques(graph_from_edgelist(el, directed = FALSE))
             # print(cliques)
             if (length(cliques) > 0) {
-                print(2)
+                # print(2)
                 # identify the left and rightmost markers in the clique, auto transforms
                 # into numeric
                 clique_range <- range(cliques[[1]]$name)
@@ -164,7 +168,7 @@ ld_prune <- function (i) {
                 # remove all but the densest marker in the clique range from chrom
                 chrom <- chrom[-(present)[-(clique_densest)], ]
             } else {
-                print(3)
+                # print(3)
                 chrom$density[densest] <- 0
                 next
             }
@@ -201,6 +205,7 @@ ld_prune <- function (i) {
         # print(1)
         print((nrow(chrom) / length(var_sets[[i]])))
     }
+    chrom
 }
 
 pane2 <- 50
@@ -212,11 +217,10 @@ max_dist <- 10
 
 snp_sets <- mclapply(1:length(densities), ld_prune, mc.cores = 7)
 
-which(! var_sets[[1]] %in% snp_sets[[1]]$id)
 ################################################################################
 png(
    "/workspace/barley/results/phys_vs_recip_mean_LD_pruned.png",
-  family = "Times New Roman", width = 220, height = 1400, pointwindow = 5,
+  family = "Times New Roman", width = 220, height = 1400, pointsize = 5,
   units = "mm", res = 192
 )
 par(mfrow = c(7, 1))
@@ -226,3 +230,18 @@ for (i in 1:7) {
 dev.off()
 
 pca <- snpgdsPCA(barley, snp.id=(snp_sets %>% do.call(rbind, .))$id, num.thread = 8)
+
+passp <- read_tsv("/workspace/barley/barley_GBS_SNP_data/mascher@IPK-GATERSLEBEN.DE/variant_matrices/barley_GBS_SNP_data/180906_sample_information.tsv")
+barley_cults <- match(as.character(read.gdsn(index.gdsn(barley, "sample.id"))), passp$ENA_accession_id)
+regions <- countrycode(passp$country_of_origin[barley_cults], "iso3c", "region") %>% as.factor()
+
+scatter <- plot_ly() %>%
+  add_markers(
+    x = ~pca$eigenvect[, 1], y = ~pca$eigenvect[, 2], z = ~pca$eigenvect[, 3],
+    color = regions, colors = clrs, marker = list(size = 5)
+  )
+
+saveWidget(
+  as_widget(scatter),
+  "/workspace/barley/results/pca.html"
+)
