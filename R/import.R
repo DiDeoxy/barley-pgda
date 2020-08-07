@@ -68,9 +68,3 @@ png(
 plot(pca, eig=1:4, pch=20, col = clrs[regions])
 dev.off()
 dim(pca$eigenvect)
-
-
-knn_cl <- kmeans(barley_diss$diss, 1000, iter.max=20)
-names()
-
-dim(knn_cl$centers)
