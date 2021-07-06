@@ -4,7 +4,7 @@
 	"name": "R",
 	"dockerFile": "Dockerfile",
 
-	"workspaceMount": "src=C:\\Users\\Max_H\\repos\\school,dst=/workspace/repos,type=bind,consistency=cached",
+	"workspaceMount": "src=C:\\Users\\Max_H\\repos\\barley-pgda,dst=/workspace/barley-pgda,type=bind,consistency=cached",
 	"workspaceFolder": "/workspace",
 
 	"runArgs": [
